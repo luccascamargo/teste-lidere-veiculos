@@ -37,6 +37,7 @@ interface Vehicle {
   tipo: string;
   id: number;
   marca: string;
+  marca_id: string;
   modelo: string;
   ano: string;
   placa: string;
@@ -46,9 +47,19 @@ interface Vehicle {
 
 const formSchema = z.object({
   tipo: z.string().min(1, { message: "Campo obrigatório" }),
-  marca: z.string().min(1, { message: "Campo obrigatório" }),
+  marca_id: z.string().min(1, { message: "Campo obrigatório" }),
+  marca: z.string(),
   modelo: z.string().min(1, { message: "Campo obrigatório" }),
-  ano: z.string().min(1, { message: "Campo obrigatório" }),
+  ano: z
+    .string()
+    .min(1, { message: "Campo obrigatório" })
+    .refine(
+      (value) => {
+        const year = parseInt(value, 10);
+        return year >= 1900 && year <= new Date().getFullYear();
+      },
+      { message: "Ano inválido" }
+    ),
   placa: z
     .string()
     .min(1, { message: "Campo obrigatório" })
@@ -80,6 +91,7 @@ export function FormVeiculos() {
       tipo: "",
       marca: "",
       modelo: "",
+      marca_id: "",
       ano: "",
       placa: "",
       cor: "",
@@ -94,9 +106,14 @@ export function FormVeiculos() {
     }
   }, []);
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
+  const onSubmit = (values: z.infer<typeof formSchema>) => {
     if (editingId !== null) {
-      // Editar veículo existente
+      const brand = brands.data?.data.find(
+        (brand) => brand.valor === values.marca_id
+      );
+      if (brand) {
+        values.marca = brand.nome;
+      }
       const updatedVehicles = vehicles.map((vehicle) =>
         vehicle.id === editingId ? { ...vehicle, ...values } : vehicle
       );
@@ -104,7 +121,6 @@ export function FormVeiculos() {
       localStorage.setItem("vehicles", JSON.stringify(updatedVehicles));
       setEditingId(null);
     } else {
-      // Adicionar novo veículo
       const vehicleAllReadyExists = vehicles.some(
         (vehicle) => vehicle.placa === values.placa
       );
@@ -112,11 +128,11 @@ export function FormVeiculos() {
         toast("Veículo com a placa informada já cadastrado");
         return;
       }
-      const brandName = brands.data?.data.filter(
-        (brand) => brand.valor === values.marca
+      const brand = brands.data?.data.find(
+        (brand) => brand.valor === values.marca_id
       );
-      if (brandName) {
-        values.marca = brandName[0].nome;
+      if (brand) {
+        values.marca = brand.nome;
       }
       const newVehicle = { ...values, id: Date.now() };
       const updatedVehicles = [...vehicles, newVehicle];
@@ -124,7 +140,7 @@ export function FormVeiculos() {
       localStorage.setItem("vehicles", JSON.stringify(updatedVehicles));
     }
     form.reset();
-  }
+  };
 
   const handleEdit = (id: number) => {
     const vehicleToEdit = vehicles.find((vehicle) => vehicle.id === id);
@@ -135,20 +151,31 @@ export function FormVeiculos() {
   };
 
   const handleDelete = (id: number) => {
-    const updatedVehicles = vehicles.filter((vehicle) => vehicle.id !== id);
-    setVehicles(updatedVehicles);
-    localStorage.setItem("vehicles", JSON.stringify(updatedVehicles));
+    const confirmDelete = confirm(
+      "Tem certeza que deseja excluir este veículo?"
+    );
+    if (confirmDelete) {
+      const updatedVehicles = vehicles.filter((vehicle) => vehicle.id !== id);
+      setVehicles(updatedVehicles);
+      localStorage.setItem("vehicles", JSON.stringify(updatedVehicles));
+    }
   };
 
   const brands = useMutation({
     mutationKey: ["brands"],
     mutationFn: ({ type }: { type: string }) => fetchBrands(type),
+    onError: () => {
+      toast("Erro ao buscar marcas");
+    },
   });
 
   const models = useMutation({
     mutationKey: ["models"],
     mutationFn: ({ type, brand }: { type: string; brand: string }) =>
       fetchModels(type, brand),
+    onError: () => {
+      toast("Erro ao buscar modelos");
+    },
   });
 
   useEffect(() => {
@@ -161,22 +188,22 @@ export function FormVeiculos() {
   }, [form.watch("tipo")]);
 
   useEffect(() => {
-    const brand = form.watch("marca");
+    const brand = form.watch("marca_id");
     const type = form.watch("tipo");
     if (brand && type) {
       form.setValue("modelo", "");
       models.mutate({ type, brand });
     }
-  }, [form.watch("marca")]);
+  }, [form.watch("marca_id")]);
 
   return (
-    <>
+    <div className="w-full flex flex-col gap-8 p-4 sm:p-8">
       <Form {...form}>
         <form
           onSubmit={form.handleSubmit(onSubmit)}
-          className="flex flex-col items-center"
+          className="flex flex-col items-center w-full"
         >
-          <div className="space-y-8 space-x-8 flex flex-wrap items-start">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
             <FormField
               control={form.control}
               name="tipo"
@@ -188,9 +215,9 @@ export function FormVeiculos() {
                     defaultValue={field.value}
                     value={field.value}
                   >
-                    <FormControl className="w-36">
+                    <FormControl className="w-full">
                       <SelectTrigger>
-                        <SelectValue placeholder="Marca" />
+                        <SelectValue placeholder="Tipo" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -205,7 +232,7 @@ export function FormVeiculos() {
             />
             <FormField
               control={form.control}
-              name="marca"
+              name="marca_id"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Marca</FormLabel>
@@ -215,7 +242,7 @@ export function FormVeiculos() {
                     value={field.value}
                     disabled={brands.isSuccess !== true}
                   >
-                    <FormControl className="w-36">
+                    <FormControl className="w-full">
                       <SelectTrigger>
                         <SelectValue
                           placeholder={
@@ -250,7 +277,7 @@ export function FormVeiculos() {
                     value={field.value}
                     disabled={models.isSuccess !== true}
                   >
-                    <FormControl className="w-36">
+                    <FormControl className="w-full">
                       <SelectTrigger>
                         <SelectValue
                           placeholder={
@@ -279,7 +306,7 @@ export function FormVeiculos() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Ano de Fabricação</FormLabel>
-                  <FormControl>
+                  <FormControl className="w-full">
                     <Input placeholder="2025" {...field} />
                   </FormControl>
                   <FormMessage />
@@ -292,7 +319,7 @@ export function FormVeiculos() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Placa</FormLabel>
-                  <FormControl>
+                  <FormControl className="w-full">
                     <Input placeholder="ABC1D23 e ABC1234" {...field} />
                   </FormControl>
                   <FormMessage />
@@ -323,7 +350,7 @@ export function FormVeiculos() {
                     defaultValue={field.value}
                     value={field.value}
                   >
-                    <FormControl className="w-36">
+                    <FormControl className="w-full">
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione o status do veiculo" />
                       </SelectTrigger>
@@ -341,52 +368,54 @@ export function FormVeiculos() {
               )}
             />
           </div>
-          <Button type="submit" className="cursor-pointer">
-            Enviar
+          <Button type="submit" className="cursor-pointer mt-4">
+            {editingId !== null ? "Atualizar" : "Enviar"}
           </Button>
         </form>
       </Form>
 
-      <Table className="max-w-3xl m-auto">
-        <TableCaption>Lista de Veículos Cadastrados</TableCaption>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Marca</TableHead>
-            <TableHead>Modelo</TableHead>
-            <TableHead>Ano</TableHead>
-            <TableHead>Placa</TableHead>
-            <TableHead>Cor</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Ações</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {vehicles.map((vehicle) => (
-            <TableRow key={vehicle.id}>
-              <TableCell>{vehicle.marca}</TableCell>
-              <TableCell>{vehicle.modelo}</TableCell>
-              <TableCell>{vehicle.ano}</TableCell>
-              <TableCell>{vehicle.placa}</TableCell>
-              <TableCell>{vehicle.cor}</TableCell>
-              <TableCell>{vehicle.status}</TableCell>
-              <TableCell className="flex space-x-4">
-                <Button
-                  onClick={() => handleEdit(vehicle.id)}
-                  className="cursor-pointer"
-                >
-                  Editar
-                </Button>
-                <Button
-                  onClick={() => handleDelete(vehicle.id)}
-                  className="cursor-pointer"
-                >
-                  Remover
-                </Button>
-              </TableCell>
+      <div className="overflow-x-auto max-w-screen">
+        <Table className="min-w-full">
+          <TableCaption>Lista de Veículos Cadastrados</TableCaption>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="px-2 py-1">Marca</TableHead>
+              <TableHead className="px-2 py-1">Modelo</TableHead>
+              <TableHead className="px-2 py-1">Ano</TableHead>
+              <TableHead className="px-2 py-1">Placa</TableHead>
+              <TableHead className="px-2 py-1">Cor</TableHead>
+              <TableHead className="px-2 py-1">Status</TableHead>
+              <TableHead className="px-2 py-1">Ações</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </>
+          </TableHeader>
+          <TableBody>
+            {vehicles.map((vehicle) => (
+              <TableRow key={vehicle.id}>
+                <TableCell className="px-2 py-1">{vehicle.marca}</TableCell>
+                <TableCell className="px-2 py-1">{vehicle.modelo}</TableCell>
+                <TableCell className="px-2 py-1">{vehicle.ano}</TableCell>
+                <TableCell className="px-2 py-1">{vehicle.placa}</TableCell>
+                <TableCell className="px-2 py-1">{vehicle.cor}</TableCell>
+                <TableCell className="px-2 py-1">{vehicle.status}</TableCell>
+                <TableCell className="px-2 py-1 flex space-x-2">
+                  <Button
+                    onClick={() => handleEdit(vehicle.id)}
+                    className="cursor-pointer"
+                  >
+                    Editar
+                  </Button>
+                  <Button
+                    onClick={() => handleDelete(vehicle.id)}
+                    className="cursor-pointer"
+                  >
+                    Remover
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
   );
 }
